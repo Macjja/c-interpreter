@@ -42,6 +42,9 @@ int *current_id,  // current parsed ID
 // fields of identifier (like a struct, but our complier doesn't understand them so we use int array)
 enum {Token, Hash, Name, Type, Class, Value, BType, BClass, BValue, IdSize};
 
+enum { CHAR, INT, PTR };
+int *idmain; // the 'main' function
+
 // set of helper functions to make code more readable
 int is_low_char(int input) {
   return (input >= 'a' && input <= 'z');
@@ -284,15 +287,136 @@ void next() {
   return;
 }
 
+void match(int tk) {
+  if (token == tk) {
+    next();
+  } else {
+    printf("%d: expected token: %d\n", line, tk);
+    exit(-1);
+  }
+}
+
 void expression(int level) {
   // do nothing
+}
+
+void enum_declaration() {
+  // parse enum [id] { a = 1, b = 3, ...}
+  int i = 0;
+  while (token != '}') {
+    if (token != Id) {
+      printf("%d: ba enum identifier %d\n", line, token);
+      exit(-1);
+    }
+    next();
+    if (token == Assign) {
+      // like {a=10}
+      next();
+      if (token != Num) {
+        printf("%d: bad enum initializer\n", line);
+        exit(-1);
+      }
+      i = token_val;
+      next();
+    }
+
+    current_id[Class] = Num;
+    current_id[Type] = INT;
+    current_id[Value] = i++;
+
+    if (token == ',') {
+      next();
+    }
+  }
+}
+
+int basetype;  //  the type of a delcaration
+int expr_type; // the type of an expression
+void global_declaration() {
+  // global_declaration ::= enum_decl | variable_decl | function_decl
+  //
+  // enum_decl ::= 'enum' [id] '{' id ['=' 'num'] {',' id ['=' 'num'} '}'
+  //
+  // variable_decl ::= type {'*'} id { ',' {'*'} id } ';'
+  //
+  // function_decl ::= type {'*'} id '(' parameter_decl ')' '{' body_decl '}'
+
+  int type; // tmp, actual type for variable
+  int i;
+
+  basetype = INT;
+  
+  // parse enum, this should be treated alone.
+  if (token == Enum) {
+    // enum [id] {a = 10, b = 20, ... }
+    match(Enum);
+    if (token != '{') {
+      match(Id);
+    }
+    if (token == '{') {
+      // parse the assign part
+      match('{');
+      enum_declaration();
+      match('}');
+    }
+
+    match(';');
+    return;
+  }
+
+  // prase type information
+  if (token == Int) {
+    match(Int);
+  }
+  else if (token == Char) {
+    match(Char);
+    basetype = CHAR;
+  }
+
+  // parse the comma seperated variable declaration
+  while (token != ';' && token != '}') {
+    type = basetype;
+    // parse pointer type, note that there may exist 'int ****x'
+    while (token == Mul) {
+      match(Mul);
+      type = type + PTR;
+    }
+
+    if (token != Id) {
+      // invalid declaration
+      printf("%d: bad global declaration\n", line);
+      exit(-1);
+    }
+    if (current_id[Class]) {
+      // identifier exists
+      printf("%d: duplicate global declaration\n", line);
+      exit(-1);
+    }
+    match(Id);
+    current_id[Type] = type;
+
+    if (token == '(') {
+      current_id[Class] = Fun;
+      current_id[Value] = (int)(text + 1); // the memory address of function
+      function_declaration();
+    } else {
+      // variable declaration
+      current_id[Class] = Glo; // global variable
+      current_id[Value] = (int)data; // assign memory address
+      data = data + sizeof(int);
+    }
+
+    if (token == ',') {
+      match(',');
+    }
+  }
+  next();
 }
 
 void program() {
   next();
   while (token > 0) {
-    printf("token is: %c\n", token);
-    next();
+    global_declaration();
   }
 }
 
@@ -352,8 +476,6 @@ int eval() {
   return 0;
 }
 
-enum { CHAR, INT, PTR };
-int *idmain; // the 'main' function
 int main(int argc, char **argv) {
   int i, fd;
   argc--;
