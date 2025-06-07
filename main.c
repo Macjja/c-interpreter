@@ -334,6 +334,92 @@ void enum_declaration() {
   }
 }
 
+
+void statement() {
+  // there are 6 kinds of statements here:
+  // 1. if (...) <statement> [else <statement>]
+  // 2. while (...) <statement>
+  // 3. { <statement> }
+  // 4. return xxx;
+  // 5. <empty statement>;
+  // 6. expression; (expression end with semicolon)
+  
+  int *a, *b;
+
+  if (token == If) {
+    match(If);
+    match('(');
+    expression(Assign); // parse condition
+    match(')');
+    
+    *++text = JZ;
+    b = ++text;
+
+    statement();         // parse statement
+    if (token == Else) { // parse else
+      match(Else);
+      
+      // emit code for JMP B
+      *b = (int)(text + 3);
+      *++text = JMP;
+      b = ++text;
+
+      statement();
+    }
+    *b = (int)(text + 1);
+  }
+  else if (token == While) {
+    match(While);
+
+    a = text + 1;
+
+    match('(');
+    expression(Assign);
+    match(')');
+
+    *++text = JZ;
+    b = ++text;
+
+    statement();
+
+    *++text = JMP;
+    *++text = (int)a;
+    *b = (int)(text + 1);
+  }
+  else if (token == Return) {
+    // return [expression];
+    match(Return);
+
+    if (token != ';') {
+      expression(Assign);
+    }
+
+    match(';');
+
+    // emit code for return
+    *++text = LEV;
+  }
+  else if (token == '{') {
+    // { statment ... }
+    match('{');
+
+    while (token != '}') {
+      statement();
+    }
+
+    match(';');
+  }
+  else if (token == ';') {
+    // empty statement
+    match(';');
+  }
+  else {
+    // a = b; or function_call();
+    expression(Assign);
+    match(';');
+  }
+}
+
 void function_body() {
   // type func_name (...) {...}
   //                   -->|   |<--
