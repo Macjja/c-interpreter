@@ -9,6 +9,8 @@
 
 #define int long long int
 
+void log_ptr(int * ptr, size_t size);
+
 int token;           // current token
 char *src, *old_src; // pointer to source code string
 int poolsize;        // default size of text/data/stack
@@ -39,7 +41,10 @@ enum {LEA ,IMM ,JMP ,CALL,JZ  ,JNZ ,ENT ,ADJ ,LEV ,LI  ,LC  ,SI  ,SC  ,PUSH,
 enum {
   Num = 128, Fun, Sys, Glo, Loc, Id,
   Char, Else, Enum, If, Int, Return, Sizeof, While,
-  Assign, Cond, Lor, Lan, Or, Xor, And, Eq, Ne, Lt, Gt, Le, Ge, Shl, Shr, Add, Sub, Mul, Div, Mod, Inc, Dec, Brak
+  AndAssign, XorAssign, OrAssign, ShlAssign, ShrAssign, MulAssign,
+  DivAssign, ModAssign, AddAssign, SubAssign, Assign, 
+  Cond, Lor, Lan, Or, Xor, And, Eq,
+  Ne, Lt, Gt, Le, Ge, Shl, Shr, Add, Sub, Mul, Div, Mod, Inc, Dec, Brak
 };
 
 int token_val;    // value of current token (mainly for number)
@@ -47,7 +52,7 @@ int *current_id,  // current parsed ID
     *symbols;     // symbol table
 
 // fields of identifier (like a struct, but our complier doesn't understand them so we use int array)
-enum {Token, Hash, Name, Type, Class, Value, BType, BClass, BValue, IdSize};
+enum {Token, Hash, Name, NameLen, Type, Class, Value, BType, BClass, BValue, IdSize};
 
 enum { CHAR, INT, PTR };
 int *idmain; // the 'main' function
@@ -111,6 +116,7 @@ void next() {
       }
       // store new ID
       current_id[Name] = (int)last_pos;
+      current_id[NameLen] = (int) (src - last_pos);
       current_id[Hash] = hash;
       token = current_id[Token] = Id;
       return;
@@ -175,7 +181,13 @@ void next() {
         while (*src != 0 && *src != '\n') {
           ++src;
         }
-      } else {
+      } 
+      else if (*src == '=') {
+        src++;
+        token = DivAssign;
+        return;
+      }
+      else {
         // then it is a divide operator
         token = Div;
         return;
@@ -197,7 +209,12 @@ void next() {
       if (*src == '+') {
         src++;
         token = Inc;
-      } else {
+      } 
+      else if (*src == '=') {
+        src++;
+        token = AddAssign;
+      }
+      else {
         token = Add;
       }
       return;
@@ -207,7 +224,12 @@ void next() {
       if (*src == '-') {
         src++;
         token = Dec;
-      } else {
+      } 
+      else if (*src == '=') {
+        src++;
+        token = SubAssign;
+      }
+      else {
         token = Sub;
       }
       return;
@@ -227,7 +249,12 @@ void next() {
         token = Le;
       } else if (*src == '<') {
         src++;
-        token = Shl;
+        if (*src == '=') {
+          src++;
+          token = ShlAssign;
+        } else {
+          token = Shl;
+        }
       } else {
         token = Lt;
       }
@@ -240,7 +267,12 @@ void next() {
         token = Ge;
       } else if (*src == '>') {
         src++;
-        token = Shr;
+        if (*src == '=') {
+          src++;
+          token = ShrAssign;
+        } else {
+          token = Shr;
+        }
       } else {
         token = Gt;
       }
@@ -251,7 +283,12 @@ void next() {
       if (*src == '|') {
         src++;
         token = Lor;
-      } else {
+      }
+      else if (*src == '=') {
+        src++;
+        token = OrAssign;
+      }
+      else {
         token = Or;
       }
       return;
@@ -261,21 +298,41 @@ void next() {
       if (*src == '&') {
         src++;
         token = Lan;
-      } else {
+      } 
+      else if (*src == '=') {
+        src++;
+        token = AndAssign;
+      }
+      else {
         token = And;
       }
       return;
     }
     else if (token == '^') {
-      token = Xor;
+      if (*src == '=') {
+        src++;
+        token = XorAssign;
+      } else {
+        token = Xor;
+      }
       return;
     }
     else if (token == '%') {
-      token = Mod;
+      if (*src == '=') {
+        src++;
+        token = ModAssign;
+      } else {
+        token = Mod;
+      }
       return;
     }
     else if (token == '*') {
-      token = Mul;
+      if (*src == '=') {
+        src++;
+        token = MulAssign;
+      } else {
+        token = Mul;
+      }
       return;
     }
     else if (token == '[') {
@@ -441,7 +498,7 @@ void expression(int level, int **text) {
         *++(*text) = id[Value];
       }
       else {
-        printf("%d: bad function call to function: \"%s()\" \n", line, id[Name]);
+        printf("%d: bad function call to function: \"%.*s()\" \n", line, id[NameLen], id[Name]);
         exit(-1);
       }
 
@@ -469,7 +526,7 @@ void expression(int level, int **text) {
         *++(*text) = id[Value];
       }
       else {
-        printf("%d: undefined variable: \"%s\"\n", line, id[Name]);
+        printf("%d: undefined variable: \"%.*s\"\n", line, id[NameLen], id[Name]);
         exit(-1);
       }
 
@@ -607,7 +664,117 @@ void expression(int level, int **text) {
     // parse token for binary operator and postfix operator
     
     tmp = expr_type;
-    if (token == Assign) {
+    if (token >= AndAssign && token <= SubAssign) { 
+      // &=, should map to same istr as id = (id & expr)
+
+      if (**text == LC) {
+        **text = PUSH; // save the lvalue's pointer
+        *++(*text) = LC;
+      } 
+      else if (**text == LI) {
+        **text = PUSH; // save the lvalue's pointer
+        *++(*text) = LI;
+      }
+      else {
+        printf("%d: bad lvalue in assignment (Assign)\n", line);
+        exit(-1);
+      }
+      
+      if (token == AndAssign) {
+        match(AndAssign);
+        *++(*text) = PUSH;
+        expression(Assign, text);
+        *++(*text) = AND;
+      }
+      else if (token == XorAssign) {
+        match(XorAssign);
+        *++(*text) = PUSH;
+        expression(Assign, text);
+        *++(*text) = XOR;
+      }
+      else if (token == OrAssign) {
+        match(OrAssign);
+        *++(*text) = PUSH;
+        expression(Assign, text);
+        *++(*text) = OR;
+      }
+      else if (token == ShlAssign) {
+        match(ShlAssign);
+        *++(*text) = PUSH;
+        expression(Assign, text);
+        *++(*text) = SHL;
+      }
+      else if (token == ShrAssign) {
+        match(ShrAssign);
+        *++(*text) = PUSH;
+        expression(Assign, text);
+        *++(*text) = SHR;
+      }
+      else if (token == MulAssign) {
+        match(MulAssign);
+        *++(*text) = PUSH;
+        expression(Assign, text);
+        *++(*text) = MUL;
+      }
+      else if (token == DivAssign) {
+        match(DivAssign);
+        *++(*text) = PUSH;
+        expression(Assign, text);
+        *++(*text) = DIV;
+      }
+      else if (token == ModAssign) {
+        match(ModAssign);
+        *++(*text) = PUSH;
+        expression(Assign, text);
+        *++(*text) = MOD;
+      }
+      else if (token == AddAssign) {
+        match(AddAssign);
+        *++(*text) = PUSH;
+        expression(Assign, text);
+        expr_type = tmp;
+
+        if (expr_type > PTR) {
+          // pointer type, and not 'char *'
+          *++(*text) = PUSH;
+          *++(*text) = IMM;
+          *++(*text) = sizeof(int);
+          *++(*text) = MUL;
+        }
+        *++(*text) = ADD;
+      }
+      else if (token == SubAssign) {
+        match(SubAssign);
+        *++(*text) = PUSH;
+        expression(Assign, text);
+
+        if (tmp > PTR && tmp == expr_type) {
+          // pointer subtraction
+          *++(*text) = SUB;
+          *++(*text) = PUSH;
+          *++(*text) = IMM;
+          *++(*text) = sizeof(int);
+          *++(*text) = DIV;
+          expr_type = INT;
+        } else if (tmp > PTR) {
+          // pointer movement
+          *++(*text) = PUSH;
+          *++(*text) = IMM;
+          *++(*text) = sizeof(int);
+          *++(*text) = MUL;
+          *++(*text) = SUB;
+          expr_type = tmp;
+        } else  {
+          // numerical subrraction
+          *++(*text) = SUB;
+          expr_type = tmp;
+        }
+      }
+
+      // assign the value of the variable
+      *++(*text) = (expr_type == CHAR) ? SC : SI;
+    }
+    else if (token == Assign) {
       // var = expr;
       match(Assign);
       if (**text == LC || **text == LI) {
@@ -654,6 +821,13 @@ void expression(int level, int **text) {
       addr = ++(*text);
       expression(Or, text);
       *addr = (int)(*text + 1);
+      expr_type = INT;
+    }
+    else if (token == Or) {
+      match(Or);
+      *++(*text) = PUSH;
+      expression(Xor, text);
+      *++(*text) = OR;
       expr_type = INT;
     }
     else if (token == Xor) {
@@ -865,7 +1039,7 @@ void enum_declaration() {
   i = 0;
   while (token != '}') {
     if (token != Id) {
-      printf("%d: ba enum identifier %d\n", line, token);
+      printf("%d: bad enum identifier %d\n", line, token);
       exit(-1);
     }
     next();
@@ -971,7 +1145,7 @@ void statement() {
   }
   else {
     // a = b; or function_call();
-    expression(Assign, &text);
+    expression(AndAssign, &text);
     match(';');
   }
 }
@@ -988,6 +1162,22 @@ void function_body() {
   int pos_local; // position of local variables on the stack.
   int type; 
   pos_local = index_of_bp;
+
+  // handle some temp text space, so we can generate local variable assignment
+  int *tmp_text = malloc(poolsize - (text - old_text) * sizeof(int) - 3);
+  int *free_ptr = tmp_text;
+  
+  if (tmp_text == NULL) {
+    printf("Error occured, not able to allocate memory!\n");
+    exit(-1);
+  }
+
+  memset(tmp_text, 0, poolsize - (text - old_text) * sizeof(int) - 3);
+
+  if (tmp_text == NULL) {
+    printf("Error occured, not able to allocate memory!\n");
+    exit(-1);
+  }
 
   while (token == Int || token == Char) {
     // local variable declaration, just like global ones.
@@ -1011,12 +1201,18 @@ void function_body() {
         printf("%d: duplicate local declaration\n", line);
         exit(-1);
       }
-      match(Id);
       
       // store the local variable
       current_id[BClass] = current_id[Class]; current_id[Class] = Loc;
       current_id[BType] = current_id[Type]; current_id[Type] = type;
-      current_id[BValue] = current_id[Value]; current_id[Value] = ++pos_local;
+      current_id[BValue] = current_id[Value]; current_id[Value] = ++pos_local; 
+      
+      if (look_ahead(Assign)) {
+        expression(Assign, &tmp_text);
+        break;
+      } else {
+        match(Id);
+      }
 
       if (token == ',') {
         match(',');
@@ -1029,6 +1225,12 @@ void function_body() {
   // save the stack size for local variables;
   *++text = ENT;
   *++text = pos_local - index_of_bp;
+  
+  // set the instructions for setting value of local variables declared
+  text++;
+  text = memcpy(text, free_ptr + 1, (tmp_text - free_ptr) * sizeof(int));
+  text += (tmp_text - free_ptr) - 1;
+  free(free_ptr);
 
   // statements
   while (token != '}') {
@@ -1260,7 +1462,7 @@ int eval() {
 
 void log_ptr(int * ptr, size_t size) {
   for (int i = 0; i < size; i++) {
-    printf("%x ", *(ptr + i));
+    printf("%llx ", (int)*(ptr + i));
     if (i % 8 == 0 && i != 0) {
       printf("\n");
     }
@@ -1375,6 +1577,27 @@ int main(int argc, char **argv) {
 
   log_ptr(pc, global_var_assign_text - old_global_assign_text);
   log_ptr(old_text + 1, text - old_text);
+  
+  printf("Program Counter: %llx\n", pc);
+  printf("main: %llx\n", idmain[Value]);
+  printf("base pointer: %llx\n", bp);
+  
+  int *id = symbols;
+  while (id[Token]) {
+    id = id + IdSize;
+    if (id[Class] == Fun) {
+      printf("function '%.*s' ptr: %llx\n", id[NameLen], id[Name],id[Value]);
+      i++;
+    }
+    else if (id[Class] == Glo || id[Class] == Loc) {
+      printf("variable '%.*s': %llx\n", id[NameLen], id[Name], id[Value]);
+      i++;
+    }
+    else {
+      i++;
+      continue;
+    }
+  }
 
   return eval();
 }
