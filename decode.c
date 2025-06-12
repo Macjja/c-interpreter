@@ -1,6 +1,8 @@
+#define _GNU_SOURCE
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 // instructions
 enum { LEA ,IMM ,JMP ,CALL,JZ  ,JNZ ,ENT ,ADJ ,LEV ,LI  ,LC  ,SI  ,SC  ,PUSH,
@@ -22,7 +24,7 @@ int has_data(int instr) {
 }
 
 void print_instr(int instr, char* data, size_t datalen) {
-  char* string;
+  char *string = "Invalid Data";
   int prnt_data = 0;
   switch (instr) {
     case (IMM):  string = "IMM"; prnt_data = 1; break; 
@@ -77,7 +79,8 @@ void print_instr(int instr, char* data, size_t datalen) {
 
 int main(int argc, char *argv[]) {
   int fd;
-  char *line;
+  char *line = NULL;
+  char *line_ptr;
   
   FILE* file;
   
@@ -96,34 +99,36 @@ int main(int argc, char *argv[]) {
   char *current_char;
 
   size_t linecap = 0;
-  ssize_t linelen;
-  while ((linelen = getline(&line, &linecap, file)) > 0) {
+  ssize_t linelen = 0;
+  while ((linelen = getline(&line, &linecap, file)) != -1) {
+    line_ptr = line;
     current_char = line;
+
 
     while (*current_char != '\n') {
       while (*current_char != ' ' && *current_char != '\n') {
         current_char++;
-        if (current_char > line + linelen) {
+        if (current_char >= line_ptr + linelen) {
           fclose(file);
           return 0;
         }
       }
 
       if (instr == -1) {
-        instr = strtol(line, &current_char, 16);
+        instr = strtol(line_ptr, &current_char, 16);
         if(!has_data(instr)) {
           print_instr(instr, data, datalen);
           instr = -1;
         }
       } else {
-        data = line;
-        datalen = current_char - line;
+        data = line_ptr;
+        datalen = current_char - line_ptr;
         print_instr(instr, data, datalen);
         instr = -1;
       }
       
       current_char++;
-      line = current_char;
+      line_ptr = current_char;
     }
 
   }
