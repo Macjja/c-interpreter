@@ -5,11 +5,13 @@ This is just a little project that interprets your C code.
 
 Todo:
  - [x] Add global variable inline assignment / declaration
- - [ ] Add local variable inline assignment / declaration
- - [ ] Add support for expressions like +=, -=, etc.
+ - [x] Add local variable inline assignment / declaration
+ - [ ] Allow local variable declaration past the top of the function
+ - [x] Add support for expressions like +=, -=, etc.
  - [ ] Add struct support?
  - [ ] Add support for switch cases, to get it boot strapping
  - [ ] Add support for function prototypes?
+ - [ ] Add for loop
 
 Usage
 --
@@ -21,8 +23,8 @@ Current features:
  - support for some standard library functions:
    `open`, `read`, `close`, `printf`, `malloc`, `memset`, `memcmp`
    `exit`
- - support for most operators, besides self assignment ones like +=
- - can do `if` and `while` loops
+ - support for all operators
+ - can do `if` statements and `while` loops
  - And of course, support for function delcarations
 
 Comiling
